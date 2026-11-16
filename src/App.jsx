@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 
 // Supabase 클라이언트 설정 (본인의 Supabase URL과 Anon Key 사용)
 const SUPABASE_URL = 'https://xopyxdsxgubzwcojanhm.supabase.co'; 
-const SUPABASE_ANON_KEY = 'sb_secret_HsXSKSZzlABjcG5wB2Nm9Q_xIIVxh2z';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_KEY;
 // 주의: 기존에 작성하신 프로젝트 내의 supabase 연동 코드가 있다면 그 코드를 그대로 사용하셔도 됩니다.
 const supabase = createClient(supabaseUrl, supabaseKey);
 
