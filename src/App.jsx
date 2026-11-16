@@ -1,312 +1,455 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// Supabase 연결 설정 (최신 Publishable key 직접 입력)
 const supabaseUrl = 'https://xopyxdsxgubzwcojanhm.supabase.co';
-const supabaseKey = 'sb_publishable_bwBWyCIB6pdHlCfrrLE2tw_unzLXlNv'; 
+const supabaseKey = 'sb_publishable_bwBWyCIB6pdHlCfrrLE2tw_unzLXlNv';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('stocks'); // 'stocks' | 'buys' | 'dividends'
-  const [exchangeRate, setExchangeRate] = useState(1400);
-  
   const [stocks, setStocks] = useState([]);
   const [buys, setBuys] = useState([]);
   const [dividends, setDividends] = useState([]);
+  const [exchangeRate, setExchangeRate] = useState(1330);
+  const [activeTab, setActiveTab] = useState('stocks');
+  
+  const [newStockName, setNewStockName] = useState('');
+  const [newStockCurrency, setNewStockCurrency] = useState('달러 ($)');
 
-  // 입력폼 상태
-  const [newStockSymbol, setNewStockSymbol] = useState('');
-  const [newStockCurrency, setNewStockCurrency] = useState('원화 (₩)');
-
-  const [buyStockSymbol, setBuyStockSymbol] = useState('');
+  const [selectedStockId, setSelectedStockId] = useState('');
   const [buyShares, setBuyShares] = useState('');
   const [buyPrice, setBuyPrice] = useState('');
 
-  // 배당금 입력 (년, 월, 일 분리)
-  const [divStockSymbol, setDivStockSymbol] = useState('');
-  const [divYear, setDivYear] = useState(new Date().getFullYear().toString());
-  const [divMonth, setDivMonth] = useState('1');
-  const [divDay, setDivDay] = useState('1');
+  const [divStockId, setDivStockId] = useState('');
+  const [divYear, setDivYear] = useState('2026');
+  const [divMonth, setDivMonth] = useState('1월');
+  const [divDay, setDivDay] = useState('1일');
   const [divAmount, setDivAmount] = useState('');
 
-  // 데이터 불러오기
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
     fetchData();
   }, []);
 
-  async function fetchData() {
-    const { data, error } = await supabase.from('app_data').select('*').eq('id', 1).single();
-    if (data && data.data) {
-      setStocks(data.data.stocks || []);
-      setBuys(data.data.buys || []);
-      setDividends(data.data.dividends || []);
-      if (data.data.exchangeRate) setExchangeRate(data.data.exchangeRate);
-    }
-  }
+  const fetchData = async () => {
+    try {
+      const { data } = await supabase
+        .from('app_data')
+        .select('*')
+        .eq('id', 1)
+        .single();
 
-  // 데이터 저장하기
-  async function saveData(newStocks, newBuys, newDividends, newRate) {
+      if (data && data.data) {
+        setStocks(data.data.stocks || []);
+        setBuys(data.data.buys || []);
+        setDividends(data.data.dividends || []);
+        setExchangeRate(data.data.exchangeRate || 1330);
+      }
+    } catch (err) {
+      console.error('데이터 불러오기 실패:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveData = async (updatedStocks, updatedBuys, updatedDividends, newRate) => {
     const payload = {
-      stocks: newStocks || stocks,
-      buys: newBuys || buys,
-      dividends: newDividends || dividends,
-      exchangeRate: newRate !== undefined ? newRate : exchangeRate,
+      stocks: updatedStocks,
+      buys: updatedBuys,
+      dividends: updatedDividends,
+      exchangeRate: newRate
     };
 
-    const { error } = await supabase
+    await supabase
       .from('app_data')
       .upsert({ id: 1, data: payload });
+  };
 
-    if (error) {
-      alert('저장에 실패했습니다: ' + error.message);
-    }
-  }
-
-  // 환율 변경
   const handleRateChange = (e) => {
-    const val = Number(e.target.value);
-    setExchangeRate(val);
-    saveData(stocks, buys, dividends, val);
+    const newRate = Number(e.target.value) || 0;
+    setExchangeRate(newRate);
+    saveData(stocks, buys, dividends, newRate);
   };
 
-  // 1. 종목 추가
-  const addStock = (e) => {
+  const handleAddStock = (e) => {
     e.preventDefault();
-    if (!newStockSymbol.trim()) return;
-    const symbol = newStockSymbol.toUpperCase().trim();
-    if (stocks.some(s => s.symbol === symbol)) {
-      alert('이미 존재하는 종목입니다.');
-      return;
-    }
-    const updated = [...stocks, { symbol, currency: newStockCurrency, currentPrice: 0 }];
-    setStocks(updated);
-    saveData(updated, buys, dividends);
-    setNewStockSymbol('');
+    if (!newStockName.trim()) return;
+
+    const newStock = {
+      id: Date.now().toString(),
+      name: newStockName.trim(),
+      currency: newStockCurrency,
+      currentPrice: 0
+    };
+
+    const updatedStocks = [...stocks, newStock];
+    setStocks(updatedStocks);
+    saveData(updatedStocks, buys, dividends, exchangeRate);
+    setNewStockName('');
   };
 
-  // 종목 삭제
-  const deleteStock = (symbol) => {
-    if (!window.confirm(`${symbol} 종목을 삭제하시겠습니까? 관련된 매수 및 배당 기록도 함께 정리됩니다.`)) return;
-    const updatedStocks = stocks.filter(s => s.symbol !== symbol);
-    const updatedBuys = buys.filter(b => b.symbol !== symbol);
-    const updatedDivs = dividends.filter(d => d.symbol !== symbol);
-    
+  const handleDeleteStock = (id) => {
+    const updatedStocks = stocks.filter((s) => s.id !== id);
+    const updatedBuys = buys.filter((b) => b.stockId !== id);
+    const updatedDividends = dividends.filter((d) => d.stockId !== id);
     setStocks(updatedStocks);
     setBuys(updatedBuys);
-    setDividends(updatedDivs);
-    saveData(updatedStocks, updatedBuys, updatedDivs);
+    setDividends(updatedDividends);
+    saveData(updatedStocks, updatedBuys, updatedDividends, exchangeRate);
   };
 
-  // 2. 매수 기록 추가
-  const addBuy = (e) => {
+  const handleCurrentPriceChange = (id, value) => {
+    const updatedStocks = stocks.map((s) => {
+      if (s.id === id) {
+        return { ...s, currentPrice: Number(value) || 0 };
+      }
+      return s;
+    });
+    setStocks(updatedStocks);
+    saveData(updatedStocks, buys, dividends, exchangeRate);
+  };
+
+  const handleAddBuy = (e) => {
     e.preventDefault();
-    if (!buyStockSymbol || !buyShares || !buyPrice) return;
-    const updated = [...buys, { id: Date.now(), symbol: buyStockSymbol, shares: Number(buyShares), price: Number(buyPrice) }];
-    setBuys(updated);
-    saveData(stocks, updated, dividends);
+    if (!selectedStockId || !buyShares || !buyPrice) return;
+
+    const newBuy = {
+      id: Date.now().toString(),
+      stockId: selectedStockId,
+      shares: Number(buyShares),
+      price: Number(buyPrice)
+    };
+
+    const updatedBuys = [...buys, newBuy];
+    setBuys(updatedBuys);
+    saveData(stocks, updatedBuys, dividends, exchangeRate);
     setBuyShares('');
     setBuyPrice('');
   };
 
-  // 3. 배당금 기록 추가 (년, 월, 일 포함)
-  const addDividend = (e) => {
+  const handleDeleteBuy = (id) => {
+    const updatedBuys = buys.filter((b) => b.id !== id);
+    setBuys(updatedBuys);
+    saveData(stocks, updatedBuys, dividends, exchangeRate);
+  };
+
+  const handleAddDividend = (e) => {
     e.preventDefault();
-    if (!divStockSymbol || !divAmount) return;
-    const updated = [...dividends, { 
-      id: Date.now(), 
-      symbol: divStockSymbol, 
-      year: divYear, 
-      month: divMonth, 
-      day: divDay, 
-      amount: Number(divAmount) 
-    }];
-    setDividends(updated);
-    saveData(stocks, buys, updated);
+    if (!divStockId || !divAmount) return;
+
+    const newDiv = {
+      id: Date.now().toString(),
+      stockId: divStockId,
+      date: `${divYear}-${divMonth}-${divDay}`,
+      amount: Number(divAmount)
+    };
+
+    const updatedDividends = [...dividends, newDiv];
+    setDividends(updatedDividends);
+    saveData(stocks, buys, updatedDividends, exchangeRate);
     setDivAmount('');
   };
 
-  // 계산 로직
-  // 종목별 수량, 투자원금 계산
-  const stockSummary = stocks.map(stock => {
-    const stockBuys = buys.filter(b => b.symbol === stock.symbol);
-    const totalShares = stockBuys.reduce((acc, cur) => acc + cur.shares, 0);
-    const totalInvested = stockBuys.reduce((acc, cur) => acc + (cur.shares * cur.price), 0);
-    
-    const stockDivs = dividends.filter(d => d.symbol === stock.symbol);
-    const totalDiv = stockDivs.reduce((acc, cur) => acc + cur.amount, 0);
+  const handleDeleteDividend = (id) => {
+    const updatedDividends = dividends.filter((d) => d.id !== id);
+    setDividends(updatedDividends);
+    saveData(stocks, buys, updatedDividends, exchangeRate);
+  };
 
-    // 종목별 배당 회수율 (배당금 / 투자원금 * 100)
-    const divReturnRate = totalInvested > 0 ? (totalDiv / totalInvested) * 100 : 0;
-
-    return {
-      ...stock,
-      totalShares,
-      totalInvested,
-      totalDiv,
-      divReturnRate,
+  const stockSummaryMap = {};
+  stocks.forEach((s) => {
+    const stockName = s.name || s.symbol || '종목';
+    stockSummaryMap[s.id || stockName] = { 
+      ...s, 
+      name: stockName,
+      id: s.id || stockName,
+      totalShares: 0, 
+      totalInvested: 0, 
+      avgBuyPrice: 0,
+      totalDividend: 0 
     };
   });
 
-  const totalInvestedKRW = stockSummary.reduce((acc, cur) => {
-    return acc + (cur.currency === '달러 ($)' ? cur.totalInvested * exchangeRate : cur.totalInvested);
-  }, 0);
+  buys.forEach((b) => {
+    if (stockSummaryMap[b.stockId]) {
+      stockSummaryMap[b.stockId].totalShares += b.shares;
+      stockSummaryMap[b.stockId].totalInvested += b.shares * b.price;
+    }
+  });
 
-  const totalDividend = dividends.reduce((acc, cur) => acc + cur.amount, 0);
-  const totalReturnRate = totalInvestedKRW > 0 ? (totalDividend / totalInvestedKRW) * 100 : 0;
+  dividends.forEach((d) => {
+    if (stockSummaryMap[d.stockId]) {
+      stockSummaryMap[d.stockId].totalDividend += d.amount;
+    }
+  });
+
+  Object.values(stockSummaryMap).forEach((s) => {
+    if (s.totalShares > 0) {
+      s.avgBuyPrice = s.totalInvested / s.totalShares;
+    }
+  });
+
+  let totalInvestedKRW = 0;
+  let totalValuationKRW = 0;
+  let totalDividendKRW = 0;
+
+  Object.values(stockSummaryMap).forEach((s) => {
+    const valuation = s.totalShares * (s.currentPrice || 0);
+    const isUSD = s.currency === '달러 ($)';
+
+    const investedKRW = isUSD ? s.totalInvested * exchangeRate : s.totalInvested;
+    const valuationKRW = isUSD ? valuation * exchangeRate : valuation;
+    const dividendKRW = isUSD ? s.totalDividend * exchangeRate : s.totalDividend;
+
+    totalInvestedKRW += investedKRW;
+    totalValuationKRW += valuationKRW;
+    totalDividendKRW += dividendKRW;
+  });
+
+  const totalProfitKRW = totalValuationKRW - totalInvestedKRW;
+  const totalReturnRate = totalInvestedKRW > 0 ? (totalProfitKRW / totalInvestedKRW) * 100 : 0;
+  const dividendYieldRate = totalInvestedKRW > 0 ? (totalDividendKRW / totalInvestedKRW) * 100 : 0;
+
+  if (loading) return <div style={{ padding: '20px', textAlign: 'center' }}>데이터를 불러오는 중입니다...</div>;
 
   return (
-    <div style={{ padding: '24px', maxWidth: '900px', margin: '0 auto', fontFamily: 'sans-serif' }}>
+    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' }}>
       <h2>📈 주식모으기 장부</h2>
       
-      <div style={{ marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-        <label>환율 (원/달러):</label>
-        <input type="number" value={exchangeRate} onChange={handleRateChange} style={{ padding: '4px', width: '100px' }} />
+      <div style={{ marginBottom: '20px' }}>
+        <label>환율 (원/달러): </label>
+        <input 
+          type="number" 
+          value={exchangeRate} 
+          onChange={handleRateChange} 
+          style={{ padding: '5px', width: '100px' }} 
+        /> 원
       </div>
 
-      {/* 요약 카드 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px', marginBottom: '20px' }}>
-        <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #dee2e6' }}>
-          <div style={{ fontSize: '13px', color: '#6c757d' }}>총 투자원금 (원화환산)</div>
-          <div style={{ fontSize: '18px', fontWeight: 'bold', marginTop: '5px' }}>{Math.round(totalInvestedKRW).toLocaleString()}원</div>
+      <div style={{ display: 'flex', gap: '15px', marginBottom: '20px' }}>
+        <div style={{ border: '1px solid #ddd', padding: '15px', borderRadius: '8px', flex: 1, background: '#f9f9f9' }}>
+          <h4>총 투자원금 (원화환산)</h4>
+          <p style={{ fontSize: '18px', fontWeight: 'bold' }}>{Math.round(totalInvestedKRW).toLocaleString()} 원</p>
         </div>
-        <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #dee2e6' }}>
-          <div style={{ fontSize: '13px', color: '#6c757d' }}>누적 배당금</div>
-          <div style={{ fontSize: '18px', fontWeight: 'bold', marginTop: '5px', color: '#2b8a3e' }}>{totalDividend.toLocaleString()}원</div>
+        <div style={{ border: '1px solid #ddd', padding: '15px', borderRadius: '8px', flex: 1, background: '#f9f9f9' }}>
+          <h4>누적 배당금 (원화환산)</h4>
+          <p style={{ fontSize: '18px', fontWeight: 'bold', color: 'green' }}>{Math.round(totalDividendKRW).toLocaleString()} 원</p>
         </div>
-        <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '1px solid #dee2e6' }}>
-          <div style={{ fontSize: '13px', color: '#6c757d' }}>전체 배당 회수율</div>
-          <div style={{ fontSize: '18px', fontWeight: 'bold', marginTop: '5px', color: '#1864ab' }}>{totalReturnRate.toFixed(2)}%</div>
+        <div style={{ border: '1px solid #ddd', padding: '15px', borderRadius: '8px', flex: 1, background: '#f9f9f9' }}>
+          <h4>전체 배당 회수율</h4>
+          <p style={{ fontSize: '18px', fontWeight: 'bold', color: 'green' }}>{dividendYieldRate.toFixed(2)} %</p>
         </div>
       </div>
 
-      {/* 탭 버튼 */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '1px solid #dee2e6', paddingBottom: '10px' }}>
-        <button onClick={() => setActiveTab('stocks')} style={tabStyle(activeTab === 'stocks')}>보유종목 현황</button>
-        <button onClick={() => setActiveTab('buys')} style={tabStyle(activeTab === 'buys')}>매수기록</button>
-        <button onClick={() => setActiveTab('dividends')} style={tabStyle(activeTab === 'dividends')}>배당금기록</button>
+      <div style={{ marginBottom: '20px', borderBottom: '2px solid #ddd', paddingBottom: '10px' }}>
+        <button 
+          onClick={() => setActiveTab('stocks')}
+          style={{ padding: '8px 16px', marginRight: '10px', background: activeTab === 'stocks' ? '#007bff' : '#f1f1f1', color: activeTab === 'stocks' ? 'white' : 'black', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+        >
+          보유종목 현황
+        </button>
+        <button 
+          onClick={() => setActiveTab('buys')}
+          style={{ padding: '8px 16px', marginRight: '10px', background: activeTab === 'buys' ? '#007bff' : '#f1f1f1', color: activeTab === 'buys' ? 'white' : 'black', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+        >
+          매수기록
+        </button>
+        <button 
+          onClick={() => setActiveTab('dividends')}
+          style={{ padding: '8px 16px', background: activeTab === 'dividends' ? '#007bff' : '#f1f1f1', color: activeTab === 'dividends' ? 'white' : 'black', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+        >
+          배당금기록
+        </button>
       </div>
 
-      {/* 1. 보유종목 탭 */}
       {activeTab === 'stocks' && (
         <div>
-          <h3>보유종목 현황</h3>
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
+          <h3>보유종목 현황 (원화 및 달러/환율 연동 표시)</h3>
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '30px' }}>
             <thead>
-              <tr style={{ background: '#f1f3f5', textAlign: 'left' }}>
-                <th style={thStyle}>종목명</th>
-                <th style={thStyle}>통화</th>
-                <th style={thStyle}>수량</th>
-                <th style={thStyle}>투자원금</th>
-                <th style={thStyle}>누적 배당금</th>
-                <th style={thStyle}>종목별 배당회수율</th>
-                <th style={thStyle}>관리</th>
+              <tr style={{ background: '#f1f1f1', borderBottom: '2px solid #ccc' }}>
+                <th style={{ padding: '10px', textAlign: 'left' }}>종목명</th>
+                <th style={{ padding: '10px', textAlign: 'center' }}>수량</th>
+                <th style={{ padding: '10px', textAlign: 'center' }}>평균매수가</th>
+                <th style={{ padding: '10px', textAlign: 'center' }}>현재가격 (수정가능)</th>
+                <th style={{ padding: '10px', textAlign: 'center' }}>평가금액</th>
+                <th style={{ padding: '10px', textAlign: 'center' }}>수익률</th>
+                <th style={{ padding: '10px', textAlign: 'center' }}>누적 배당금</th>
+                <th style={{ padding: '10px', textAlign: 'center' }}>배당회수율</th>
+                <th style={{ padding: '10px', textAlign: 'center' }}>관리</th>
               </tr>
             </thead>
             <tbody>
-              {stockSummary.length === 0 ? (
-                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '20px', color: '#868e96' }}>등록된 종목이 없습니다. 아래에서 종목을 추가해주세요.</td></tr>
+              {stocks.length === 0 ? (
+                <tr>
+                  <td colSpan="9" style={{ textAlign: 'center', padding: '20px', color: '#777' }}>등록된 종목이 없습니다.</td>
+                </tr>
               ) : (
-                stockSummary.map(s => (
-                  <tr key={s.symbol} style={{ borderBottom: '1px solid #dee2e6' }}>
-                    <td style={tdStyle}><b>{s.symbol}</b></td>
-                    <td style={tdStyle}>{s.currency}</td>
-                    <td style={tdStyle}>{s.totalShares}주</td>
-                    <td style={tdStyle}>{s.currency === '달러 ($)' ? `$${s.totalInvested.toFixed(2)}` : `${s.totalInvested.toLocaleString()}원`}</td>
-                    <td style={tdStyle}>${s.totalDiv.toFixed(2)}</td>
-                    <td style={{ ...tdStyle, color: '#1864ab', fontWeight: 'bold' }}>{s.divReturnRate.toFixed(2)}%</td>
-                    <td style={tdStyle}>
-                      <button onClick={() => deleteStock(s.symbol)} style={{ background: '#ff6b6b', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}>삭제</button>
-                    </td>
-                  </tr>
-                ))
+                Object.values(stockSummaryMap).map((s) => {
+                  const isUSD = s.currency === '달러 ($)';
+                  const unit = isUSD ? '$' : '₩';
+
+                  const avgBuyPriceOrig = s.avgBuyPrice;
+                  const currentPriceOrig = s.currentPrice || 0;
+                  const valuationOrig = s.totalShares * currentPriceOrig;
+                  const profitOrig = valuationOrig - s.totalInvested;
+                  const returnRate = s.totalInvested > 0 ? (profitOrig / s.totalInvested) * 100 : 0;
+                  const divYield = s.totalInvested > 0 ? (s.totalDividend / s.totalInvested) * 100 : 0;
+
+                  const avgBuyPriceKRW = isUSD ? avgBuyPriceOrig * exchangeRate : avgBuyPriceOrig;
+                  const currentPriceKRW = isUSD ? currentPriceOrig * exchangeRate : currentPriceOrig;
+                  const valuationKRW = isUSD ? valuationOrig * exchangeRate : valuationOrig;
+                  const dividendKRW = isUSD ? s.totalDividend * exchangeRate : s.totalDividend;
+
+                  return (
+                    <tr key={s.id} style={{ borderBottom: '1px solid #eee' }}>
+                      <td style={{ padding: '10px', fontWeight: 'bold' }}>{s.name} <span style={{ fontSize: '11px', color: '#666' }}>({s.currency})</span></td>
+                      <td style={{ padding: '10px', textAlign: 'center' }}>{s.totalShares.toLocaleString()} 주</td>
+                      
+                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                        <div>{unit} {avgBuyPriceOrig.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                        <div style={{ fontSize: '11px', color: '#666' }}>(₩{Math.round(avgBuyPriceKRW).toLocaleString()})</div>
+                      </td>
+
+                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                          <input 
+                            type="number" 
+                            value={s.currentPrice || ''} 
+                            onChange={(e) => handleCurrentPriceChange(s.id, e.target.value)} 
+                            placeholder="현재가"
+                            style={{ width: '80px', textAlign: 'center', padding: '4px', border: '1px solid #007bff', borderRadius: '4px' }}
+                          /> {unit}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#666', marginTop: '2px' }}>(₩{Math.round(currentPriceKRW).toLocaleString()})</div>
+                      </td>
+
+                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                        <div style={{ fontWeight: 'bold' }}>{unit} {valuationOrig.toLocaleString()}</div>
+                        <div style={{ fontSize: '11px', color: '#666' }}>(₩{Math.round(valuationKRW).toLocaleString()})</div>
+                      </td>
+
+                      <td style={{ padding: '10px', textAlign: 'center', color: profitOrig >= 0 ? 'blue' : 'red', fontWeight: 'bold' }}>
+                        {returnRate.toFixed(2)}%
+                      </td>
+
+                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                        <div style={{ color: 'green', fontWeight: 'bold' }}>{unit} {s.totalDividend.toLocaleString()}</div>
+                        <div style={{ fontSize: '11px', color: '#666' }}>(₩{Math.round(dividendKRW).toLocaleString()})</div>
+                      </td>
+
+                      <td style={{ padding: '10px', textAlign: 'center', color: 'green', fontWeight: 'bold' }}>
+                        {divYield.toFixed(2)}%
+                      </td>
+
+                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                        <button onClick={() => handleDeleteStock(s.id)} style={{ background: '#ff4d4d', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer' }}>삭제</button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
 
-          <h4>종목 추가</h4>
-          <form onSubmit={addStock} style={{ display: 'flex', gap: '10px' }}>
-            <input type="text" placeholder="종목명 (예: SCHD)" value={newStockSymbol} onChange={e => setNewStockSymbol(e.target.value)} style={inputStyle} />
-            <select value={newStockCurrency} onChange={e => setNewStockCurrency(e.target.value)} style={inputStyle}>
-              <option>원화 (₩)</option>
-              <option>달러 ($)</option>
-            </select>
-            <button type="submit" style={btnStyle}>추가</button>
-          </form>
+          <div style={{ border: '1px solid #ddd', padding: '20px', borderRadius: '8px', background: '#fafafa' }}>
+            <h4>새 종목 추가</h4>
+            <form onSubmit={handleAddStock} style={{ display: 'flex', gap: '10px' }}>
+              <input type="text" placeholder="종목명 (예: SCHD)" value={newStockName} onChange={(e) => setNewStockName(e.target.value)} style={{ padding: '8px', flex: 1 }} />
+              <select value={newStockCurrency} onChange={(e) => setNewStockCurrency(e.target.value)} style={{ padding: '8px' }}>
+                <option value="원 (₩)">원화 (₩)</option>
+                <option value="달러 ($)">달러 ($)</option>
+              </select>
+              <button type="submit" style={{ background: '#007bff', color: 'white', border: 'none', padding: '9px 20px', borderRadius: '4px', cursor: 'pointer' }}>추가</button>
+            </form>
+          </div>
         </div>
       )}
 
-      {/* 2. 매수기록 탭 */}
       {activeTab === 'buys' && (
         <div>
           <h3>매수 기록 관리</h3>
-          <form onSubmit={addBuy} style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-            <select value={buyStockSymbol} onChange={e => setBuyStockSymbol(e.target.value)} style={inputStyle}>
-              <option value="">종목 선택</option>
-              {stocks.map(s => <option key={s.symbol} value={s.symbol}>{s.symbol}</option>)}
-            </select>
-            <input type="number" placeholder="수량" value={buyShares} onChange={e => setBuyShares(e.target.value)} style={inputStyle} />
-            <input type="number" placeholder="매수가격" value={buyPrice} onChange={e => setBuyPrice(e.target.value)} style={inputStyle} />
-            <button type="submit" style={btnStyle}>매수 기록 추가</button>
-          </form>
-
+          <div style={{ border: '1px solid #ddd', padding: '20px', borderRadius: '8px', background: '#fafafa', marginBottom: '20px' }}>
+            <form onSubmit={handleAddBuy} style={{ display: 'flex', gap: '10px' }}>
+              <select value={selectedStockId} onChange={(e) => setSelectedStockId(e.target.value)} style={{ padding: '8px', flex: 1 }}>
+                <option value="">-- 종목 선택 --</option>
+                {stocks.map((s) => <option key={s.id} value={s.id}>{s.name || s.symbol} ({s.currency})</option>)}
+              </select>
+              <input type="number" placeholder="수량" value={buyShares} onChange={(e) => setBuyShares(e.target.value)} style={{ padding: '8px', width: '90px' }} />
+              <input type="number" placeholder="매수가" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} style={{ padding: '8px', width: '110px' }} />
+              <button type="submit" style={{ background: '#28a745', color: 'white', border: 'none', padding: '9px 20px', borderRadius: '4px', cursor: 'pointer' }}>기록 추가</button>
+            </form>
+          </div>
           <ul>
-            {buys.map(b => (
-              <li key={b.id} style={{ marginBottom: '8px' }}>
-                <b>{b.symbol}</b> - {b.shares}주 @ {b.price}
-              </li>
-            ))}
+            {buys.map((b) => {
+              const stock = stocks.find((s) => s.id === b.stockId);
+              return (
+                <li key={b.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', border: '1px solid #eee', marginBottom: '6px', background: '#fff', borderRadius: '4px' }}>
+                  <span><b>{stock ? (stock.name || stock.symbol) : ''}</b> - {b.shares}주 @ {b.price}</span>
+                  <button onClick={() => handleDeleteBuy(b.id)} style={{ background: '#ff4d4d', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}>삭제</button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
 
-      {/* 3. 배당금기록 탭 (년, 월, 일 입력 추가) */}
       {activeTab === 'dividends' && (
         <div>
           <h3>배당금 수령 기록</h3>
-          <form onSubmit={addDividend} style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr) auto', gap: '10px', marginBottom: '20px', alignItems: 'center' }}>
-            <select value={divStockSymbol} onChange={e => setDivStockSymbol(e.target.value)} style={inputStyle}>
-              <option value="">종목 선택</option>
-              {stocks.map(s => <option key={s.symbol} value={s.symbol}>{s.symbol}</option>)}
-            </select>
-            
-            <input type="text" placeholder="년도 (예: 2026)" value={divYear} onChange={e => setDivYear(e.target.value)} style={inputStyle} />
-            
-            <select value={divMonth} onChange={e => setDivMonth(e.target.value)} style={inputStyle}>
-              {Array.from({length: 12}, (_, i) => i + 1).map(m => (
-                <option key={m} value={m}>{m}월</option>
-              ))}
-            </select>
-
-            <select value={divDay} onChange={e => setDivDay(e.target.value)} style={inputStyle}>
-              {Array.from({length: 31}, (_, i) => i + 1).map(d => (
-                <option key={d} value={d}>{d}일</option>
-              ))}
-            </select>
-
-            <input type="number" placeholder="배당금 ($)" value={divAmount} onChange={e => setDivAmount(e.target.value)} style={inputStyle} />
-            
-            <button type="submit" style={btnStyle}>기록 추가</button>
-          </form>
+          <div style={{ border: '1px solid #ddd', padding: '20px', borderRadius: '8px', background: '#fafafa', marginBottom: '20px' }}>
+            <form onSubmit={handleAddDividend} style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <select value={divStockId} onChange={(e) => setDivStockId(e.target.value)} style={{ padding: '8px', flex: 1 }}>
+                <option value="">-- 종목 선택 --</option>
+                {stocks.map((s) => <option key={s.id} value={s.id}>{s.name || s.symbol} ({s.currency})</option>)}
+              </select>
+              <select value={divYear} onChange={(e) => setDivYear(e.target.value)} style={{ padding: '8px' }}>
+                <option value="2025">2025년</option>
+                <option value="2026">2026년</option>
+                <option value="2027">2027년</option>
+              </select>
+              <select value={divMonth} onChange={(e) => setDivMonth(e.target.value)} style={{ padding: '8px' }}>
+                {['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'].map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <select value={divDay} onChange={(e) => setDivDay(e.target.value)} style={{ padding: '8px' }}>
+                {Array.from({length: 31}, (_, i) => `${i+1}일`).map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+              <input type="number" placeholder="배당금 금액" value={divAmount} onChange={(e) => setDivAmount(e.target.value)} style={{ padding: '8px', width: '110px' }} />
+              <button type="submit" style={{ background: '#28a745', color: 'white', border: 'none', padding: '9px 20px', borderRadius: '4px', cursor: 'pointer' }}>기록 추가</button>
+            </form>
+          </div>
 
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ background: '#f1f3f5', textAlign: 'left' }}>
-                <th style={thStyle}>지급일자</th>
-                <th style={thStyle}>종목명</th>
-                <th style={thStyle}>배당금</th>
+              <tr style={{ background: '#f1f1f1', borderBottom: '2px solid #ccc' }}>
+                <th style={{ padding: '10px', textAlign: 'left' }}>지급일자</th>
+                <th style={{ padding: '10px', textAlign: 'left' }}>종목명</th>
+                <th style={{ padding: '10px', textAlign: 'right' }}>배당금</th>
+                <th style={{ padding: '10px', textAlign: 'center' }}>관리</th>
               </tr>
             </thead>
             <tbody>
               {dividends.length === 0 ? (
-                <tr><td colSpan="3" style={{ textAlign: 'center', padding: '20px', color: '#868e96' }}>배당금 수령 기록이 없습니다.</td></tr>
+                <tr>
+                  <td colSpan="4" style={{ textAlign: 'center', padding: '20px', color: '#777' }}>배당금 수령 기록이 없습니다.</td>
+                </tr>
               ) : (
-                dividends.map(d => (
-                  <tr key={d.id} style={{ borderBottom: '1px solid #dee2e6' }}>
-                    <td style={tdStyle}>{d.year}년 {d.month}월 {d.day}일</td>
-                    <td style={tdStyle}><b>{d.symbol}</b></td>
-                    <td style={{ ...tdStyle, color: '#2b8a3e' }}>${d.amount.toFixed(2)}</td>
-                  </tr>
-                ))
+                dividends.map((d) => {
+                  const stock = stocks.find((s) => s.id === d.stockId);
+                  const unitSymbol = stock && stock.currency === '달러 ($)' ? '$' : '₩';
+                  return (
+                    <tr key={d.id} style={{ borderBottom: '1px solid #eee' }}>
+                      <td style={{ padding: '10px' }}>{d.date}</td>
+                      <td style={{ padding: '10px', fontWeight: 'bold' }}>{stock ? (stock.name || stock.symbol) : '삭제된 종목'}</td>
+                      <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: 'green' }}>
+                        {unitSymbol} {d.amount.toLocaleString()}
+                      </td>
+                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                        <button onClick={() => handleDeleteDividend(d.id)} style={{ background: '#ff4d4d', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}>삭제</button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -315,19 +458,3 @@ export default function App() {
     </div>
   );
 }
-
-// 스타일 헬퍼
-const tabStyle = (active) => ({
-  padding: '8px 16px',
-  background: active ? '#228be6' : '#f1f3f5',
-  color: active ? 'white' : '#495057',
-  border: 'none',
-  borderRadius: '4px',
-  cursor: 'pointer',
-  fontWeight: 'bold'
-});
-
-const thStyle = { padding: '10px', borderBottom: '2px solid #dee2e6' };
-const tdStyle = { padding: '10px' };
-const inputStyle = { padding: '8px', border: '1px solid #ced4da', borderRadius: '4px' };
-const btnStyle = { padding: '8px 16px', background: '#228be6', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' };
