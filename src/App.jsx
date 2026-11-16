@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// Supabase 클라이언트 설정 (본인의 Supabase URL과 Anon Key 사용)
-const SUPABASE_URL = 'https://xopyxdsxgubzwcojanhm.supabase.co'; 
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_KEY;
-// 주의: 기존에 작성하신 프로젝트 내의 supabase 연동 코드가 있다면 그 코드를 그대로 사용하셔도 됩니다.
+// Supabase 연결 설정 (최신 Publishable key 직접 입력)
+const supabaseUrl = 'https://xopyxdsxgubzwcojanhm.supabase.co';
+const supabaseKey = 'sb_publishable_bwBWyCIB6pdHlCfrrLE2tw_unzLXlNv'; 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 export default function App() {
